@@ -11,6 +11,7 @@ all: directories \
 	$(LOG)/differential_expression.R.Rout \
 	$(LOG)/causal_networks.R.Rout \
 	$(LOG)/network_scoring.R.Rout \
+	$(LOG)/similarity.R.Rout \
 	$(LOG)/test_restults.out \
 	$(LOG)/database.R.Rout \
 	$(LOG)/test_database.out \
@@ -41,6 +42,11 @@ $(LOG)/network_scoring.R.Rout: $(CODE)/network_scoring.R \
 	$(LOG)/differential_expression.R.Rout
 	R CMD BATCH --vanilla $< $(LOG)/$(<F).Rout
 	@echo "Score the networks."
+
+$(LOG)/similarity.R.Rout: $(CODE)/similarity.R \
+	$(LOG)/differential_expression.R.Rout
+	R CMD BATCH --vanilla $< $(LOG)/$(<F).Rout
+	@echo "Calculate similarities."
 	
 $(LOG)/database.R.Rout: $(CODE)/database.R \
 	$(LOG)/network_scoring.R.Rout

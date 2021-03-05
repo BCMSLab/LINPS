@@ -7,29 +7,6 @@ library(DBI)
 if(file.exists('results/LINPS.sqlite')) unlink('results/LINPS.sqlite')
 con <- dbConnect(RSQLite::SQLite(), dbname = "results/LINPS.sqlite")
 
-# differential expression
-# list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
-#     map(function(trt) {
-#         d1 <- paste('results', trt, sep = '/')
-#         fls <- list.files(d1,
-#                           pattern = '*.tsv', 
-#                           recursive = TRUE,
-#                           full.names = TRUE)
-#         fls %>%
-#             map(function(f) {
-#                 df <- read_tsv(f)
-#                 
-#                 # TODO: should be added in diff_expr
-#                 df <- mutate(df, pert_type = trt)
-#                 
-#                 dbWriteTable(con,
-#                              value = df,
-#                              name = 'diff_expr',
-#                              overwrite = FALSE,
-#                              append = TRUE)
-#             })
-#     })
-
 # biological impact factor
 list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
     map(function(trt) {
@@ -55,6 +32,9 @@ list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
                     dplyr::select(pert_type, pert_iname, cell_id,
                                   everything()) %>%
                     spread(stat, value)
+                
+                # TODO: find the reason for this r2net!
+                df <- df[, !names(df) %in% c('r2net')]
                 dbWriteTable(con,
                              value = df,
                              name = 'bif',
@@ -125,6 +105,30 @@ list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
             })
     })
 
+# similarity
+list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
+    map(function(trt) {
+        d1 <- paste('results', trt, 'similarity', sep = '/')
+        fls <- list.files(d1,
+                          pattern = '*.tsv',
+                          recursive = TRUE,
+                          full.names = TRUE)
+        fls %>%
+            map(function(f) {
+                df <- read_tsv(f)
+                
+                # TODO: should be added in diff_expr
+                df <- mutate(df, pert_type = trt) %>%
+                    select(cell_id, pert_type, everything())
+                
+                dbWriteTable(con,
+                             value = df,
+                             name = 'similarity',
+                             overwrite = FALSE,
+                             append = TRUE)
+            })
+    })
+
 # the network models
 models <- read_tsv('data/models_metadata.tsv') %>%
     mutate(version = str_replace_all(version, '\\.', '__'),
@@ -132,7 +136,7 @@ models <- read_tsv('data/models_metadata.tsv') %>%
 
 models$graph <- models$graph %>%
     map(function(x) {
-        fl <- file.path('data/NPAModels/data', paste0(x, '.rda'))
+        fl <- file.path('tools/NPAModels/data', paste0(x, '.rda'))
         
         env <- new.env()
         load(fl, envir = env)

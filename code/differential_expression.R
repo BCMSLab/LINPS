@@ -5,9 +5,12 @@ library(SummarizedExperiment)
 library(limma)
 library(tidyverse)
 
-# load data trt_cp
-map2(c('trt_cp', 'trt_sh'),
-     c('UnTrt', 'EMPTY_VECTOR'), function(trt, ctr) {
+# load data
+perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
+controls <- c('DMSO', rep('EMPTY_VECTOR', 3))
+
+map2(perturbs, controls,
+     function(trt, ctr) {
          trt_dir <- paste0('results/', trt)
          dir.create(trt_dir)
          
@@ -19,7 +22,7 @@ map2(c('trt_cp', 'trt_sh'),
          message(paste('SE object', trt, 'is loaded.'))
          
          map(unique(trt_se$cell_id), function(c) {
-             se <- trt_se[trt_se$cell_id == c]
+             se <- trt_se[, trt_se$cell_id == c]
              se$pert_iname <- relevel(factor(se$pert_iname), ref = ctr)
              se <- se[!is.na(rownames(se)),]
              
@@ -29,6 +32,7 @@ map2(c('trt_cp', 'trt_sh'),
              
              fit <- lmFit(assay(se), mod)
              fit <- eBayes(fit)
+             
              map_df(colnames(mod)[-1],
                  ~topTable(fit,
                            number = Inf,
@@ -38,20 +42,9 @@ map2(c('trt_cp', 'trt_sh'),
                  mutate(cell_id = c) %>%
                  write_tsv(file.path(res, paste0(c, '.tsv')))
              
-             # map_df(colnames(mod)[-1], function(x) {
-             #     topTable(fit, 
-             #              coef = x,
-             #              number = Inf)
-             #     %>%
-             #         as_tibble() %>%
-             #         na.omit() %>%
-             #         mutate(pert_iname = x,
-             #                cell_id = c)
-             # }) %>%
-             #     write_tsv(file.path(res, paste0(c, '.tsv')))
              rm(fit)
              
-             message(paste('Done. Differential expression of trt_cp in', c))
+             message(paste('Done. Differential expression of', trt, 'in', c))
          })
          rm(trt_se)
      })

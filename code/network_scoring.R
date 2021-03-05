@@ -6,10 +6,10 @@ library(NPAModels)
 
 # load models
 # TODO: apply calculation to all models
-# models <- load_models('Hs')[c(2, 6)]
+models <- load_models('Hs')
 # devtools::install('data/NPAModels/')
 # preprocessNetworks()
-models <- load_models('Hs')
+# models <- load_models('Hs')
 
 # models <- map(list.files('data/NPAModels/data', pattern = '*.rda', full.names = TRUE),
 #               function(x) {
@@ -18,13 +18,16 @@ models <- load_models('Hs')
 #     env[[ls(env)]]
 # })
 
-map(c('trt_cp', 'trt_sh'), function(x) {
+perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
+
+map(perturbs, function(x) {
     d <- paste0('results/', x, '/diff_expr')
     cell <- str_split(list.files(d),
                        '\\.',
                        simplify = TRUE)[, 1]
 
     map(cell, function(c) {
+        print(c)
         diff_expr <- read_tsv(file.path(d, paste0(c, '.tsv')))
         groups <- diff_expr %>%
             dplyr::select(nodeLabel = ID,
@@ -58,22 +61,5 @@ map(c('trt_cp', 'trt_sh'), function(x) {
         write_rds(bif, file.path(bif_dir, paste0(c, '.rds')))
         rm(npa_list)
         rm(bif)
-        
-        # # scores
-        # scores_dir <- paste0('results/', x,'/scores')
-        # dir.create(scores_dir)
-        # 
-        # imap(models, function(m, y) {
-        #     model_dir <- paste0(scores_dir, '/',
-        #                 str_split(y, ' / ', simplify = TRUE)[, 2])
-        #     dir.create(model_dir)
-        #     score <- compute_npa(groups,
-        #                          m,
-        #                          verbose = TRUE)
-        #     write_rds(score, 
-        #               file.path(model_dir, paste0(c, '.rds')))
-        #     rm(score)
-        # })
-        
     })
 })

@@ -1,17 +1,12 @@
 # get and preprocess the causal networks (NPAModels)
 # make a metadata table
 
-# TODO: more causal networks can be added
-
 # load required libraries
 library(tidyverse)
 library(NPAModels)
 
-# install the NPAModles
-devtools::install('data/NPAModels/')
-
 # write a metadata table
-tibble(file = list.files('data/NPAModels/data/', 'Hs')) %>%
+tibble(file = list.files('tools/NPAModels/data/', 'Hs')) %>%
     separate(file,
              c('species', 'family', 'model',
                paste0('version_', 1:3)), 
@@ -21,4 +16,3 @@ tibble(file = list.files('data/NPAModels/data/', 'Hs')) %>%
 
 # preprocess the networks
 preprocessNetworks()
-

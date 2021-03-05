@@ -36,49 +36,58 @@ sl <- Slinky(
 # TODO: select a test set ++ to be removed
 # extract metadata table
 md <- metadata(sl)
-trt <- head(filter(md, pert_type == 'trt_cp') %>% pull(pert_iname) %>% unique(), 10)
-sh <- head(filter(md, pert_type == 'trt_sh') %>% pull(pert_iname) %>% unique(), 10)
-cell_lines <- head(pull(md, cell_id) %>% unique(), 5)
 
-# trt <- c('rutin', 'albendazole', 'tamoxifen', 'alrestatin', 'altizide', 'altrenogest')
-# sh <- c('ADPGK', 'AK3', 'AKR1C2', 'BAD', 'CDCA7L')
-# cell_lines <- c('MCF7', 'A375')
+cell_lines <- head(pull(md, cell_id) %>% unique(), 10)
+control_n <- 100
+perturbations_n <- 100
 
-md %>%
-    dplyr::select(starts_with('pert'), cell_id, -pert_id) %>%
-    unique() %>%
-    filter(pert_iname %in% c(trt, sh),
-           cell_id %in% cell_lines) %>%
+# subset the data
+
+perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
+controls <- c('DMSO', rep('EMPTY_VECTOR', 3))
+
+map2(perturbs, controls,
+     function(trt, ctr) {
+         # subset perturbations
+         trt_ind <- head(filter(md, pert_type == trt) %>% pull(pert_iname) %>% unique(), perturbations_n)
+         
+         # write md file
+         md_file <- paste0('data/expression_metadata_', trt, '.tsv')
+         md %>%
+             dplyr::select(starts_with('pert'), cell_id, -pert_id) %>%
+             unique() %>%
+             filter(pert_iname %in% trt_ind,
+                    cell_id %in% cell_lines) %>%
+             write_tsv(md_file)
+         
+         # subset sl object
+         col.ix <- which(md$cell_id %in% cell_lines & md$pert_iname %in% trt_ind)
+         set.seed(123)
+         col.ix2 <- sample(which(md$cell_id %in% cell_lines & md$pert_iname == ctr))
+
+         # se <- as(sl[, c(col.ix, col.ix2[1:control_n]) ], "SummarizedExperiment")
+         se <- as(sl[, c(col.ix, col.ix2) ], "SummarizedExperiment")
+         
+         # map ids to symbols
+         id_symbol <- select(org.Hs.eg.db,
+                             rownames(se),
+                             'SYMBOL',
+                             'ENTREZID')
+         all(rownames(se) == id_symbol$ENTREZID)
+         rownames(se) <- id_symbol$SYMBOL
+
+         se <- se[!is.na(rownames(se)),]
+
+         # write to file
+         write_rds(se, paste0('data/', trt, '.rds'))
+     })
+
+# merge the metadatafiles
+list.files('data',
+           pattern = 'expression_metadata_trt*', full.names = TRUE) %>%
+    map_df(function(x) {
+        df <- read_tsv(x) %>% mutate(pert_dose_unit = as.character(pert_dose_unit))
+        unlink(x)
+        df
+    }) %>%
     write_tsv('data/expression_metadata.tsv')
-
-col.ix <- which(metadata(sl)$cell_id %in% cell_lines & metadata(sl)$pert_iname %in% trt)
-col.ix2 <- which(metadata(sl)$cell_id %in% cell_lines & metadata(sl)$pert_iname == 'UnTrt')
-
-# trt cp
-trt_cp <- as(sl[, c(col.ix, col.ix2[1:100]) ], "SummarizedExperiment")
-
-id_symbol <- select(org.Hs.eg.db,
-                    rownames(trt_cp),
-                    'SYMBOL',
-                    'ENTREZID')
-all(rownames(trt_cp) == id_symbol$ENTREZID)
-rownames(trt_cp) <- id_symbol$SYMBOL
-
-trt_cp <- trt_cp[!is.na(rownames(trt_cp)),]
-
-write_rds(trt_cp, 'data/trt_cp.rds')
-
-col.ix <- which(metadata(sl)$cell_id %in% cell_lines & metadata(sl)$pert_iname %in% sh)
-col.ix2 <- which(metadata(sl)$cell_id %in% cell_lines & metadata(sl)$pert_iname == 'EMPTY_VECTOR')
-
-# trt sh
-trt_sh <- as(sl[, c(col.ix, col.ix2[1:100]) ], "SummarizedExperiment")
-
-id_symbol <- select(org.Hs.eg.db,
-                    rownames(trt_sh),
-                    'SYMBOL',
-                    'ENTREZID')
-all(rownames(trt_sh) == id_symbol$ENTREZID)
-rownames(trt_sh) <- id_symbol$SYMBOL
-
-write_rds(trt_sh, 'data/trt_sh.rds')

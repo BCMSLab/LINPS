@@ -1,3 +1,3 @@
-[submodule "data/NPAModels"]
-	path = data/NPAModels
+[submodule "tools/NPAModels"]
+	path = tools/NPAModels
 	url = https://github.com/MahShaaban/NPAModels
