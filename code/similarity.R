@@ -4,11 +4,13 @@ library(reshape2)
 library(Hmisc)
 
 # calculate similarity
+res_dir <- 'results/'
+
 perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
 
 map(perturbs,
     function(x) {
-    d <- paste0('results/', x, '/diff_expr')
+    d <- paste0(res_dir, x, '/diff_expr')
     cell <- str_split(list.files(d),
                       '\\.',
                       simplify = TRUE)[, 1]
@@ -25,7 +27,7 @@ map(perturbs,
             na.omit() %>%
             mutate(cell_id = c)
         
-        sim_dir <- paste0('results/', x,'/similarity')
+        sim_dir <- paste0(res_dir, x,'/similarity')
         dir.create(sim_dir)
         
         write_tsv(sim,

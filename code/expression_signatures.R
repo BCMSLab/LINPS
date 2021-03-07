@@ -37,22 +37,66 @@ sl <- Slinky(
 # extract metadata table
 md <- metadata(sl)
 
+# get gene symbols
+# se <- as(sl[, 1], "SummarizedExperiment")
+# id_symbol <- select(org.Hs.eg.db,
+#                     rownames(se),
+#                     'SYMBOL',
+#                     'ENTREZID')
+
 cell_lines <- head(pull(md, cell_id) %>% unique(), 10)
 control_n <- 100
-perturbations_n <- 100
+perturbations_n <- 50
 
 # subset the data
+perturbs <- c("trt_sh", "trt_oe",  "trt_oe.mut", "trt_cp")
+controls <- c(rep('EMPTY_VECTOR', 3), 'DMSO')
 
-perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
-controls <- c('DMSO', rep('EMPTY_VECTOR', 3))
+res_dir <- 'results/'
+dir.create(res_dir)
 
-map2(perturbs, controls,
-     function(trt, ctr) {
+map(unique(controls),
+     function(ctr) {
+         ctr_dir <- paste0(res_dir, ctr)
+         dir.create(ctr_dir)
+         
+         map(cell_lines, function(c) {
+             # subset sl object
+             set.seed(123)
+             col.ix <- which(md$cell_id == c & md$pert_iname == ctr)
+             if(length(col.ix) > 0) {
+                 col.ix <- sample(col.ix, min(length(col.ix), control_n))
+                 
+                 se <- as(sl[, col.ix], "SummarizedExperiment")
+                 # map ids to symbols
+                 id_symbol <- select(org.Hs.eg.db,
+                                     rownames(se),
+                                     'SYMBOL',
+                                     'ENTREZID')
+                 # all(rownames(se) == id_symbol$ENTREZID)
+                 rownames(se) <- id_symbol$SYMBOL
+                 
+                 se <- se[!is.na(rownames(se)),]
+                 
+                 # write to file
+                 expr_dir <- paste0(res_dir, ctr, '/exprs')
+                 dir.create(expr_dir)
+                 write_rds(se, paste0(expr_dir, '/', c,'.rds'))
+                 message(paste('Done.', ctr, 'in', c))
+             }
+         }) 
+         
+     })
+
+tmp <- tempdir()
+
+map(perturbs,
+     function(trt) {
          # subset perturbations
          trt_ind <- head(filter(md, pert_type == trt) %>% pull(pert_iname) %>% unique(), perturbations_n)
          
          # write md file
-         md_file <- paste0('data/expression_metadata_', trt, '.tsv')
+         md_file <- paste0(tmp, '/expression_metadata_', trt, '.tsv')
          md %>%
              dplyr::select(starts_with('pert'), cell_id, -pert_id) %>%
              unique() %>%
@@ -60,34 +104,42 @@ map2(perturbs, controls,
                     cell_id %in% cell_lines) %>%
              write_tsv(md_file)
          
-         # subset sl object
-         col.ix <- which(md$cell_id %in% cell_lines & md$pert_iname %in% trt_ind)
-         set.seed(123)
-         col.ix2 <- sample(which(md$cell_id %in% cell_lines & md$pert_iname == ctr))
-
-         # se <- as(sl[, c(col.ix, col.ix2[1:control_n]) ], "SummarizedExperiment")
-         se <- as(sl[, c(col.ix, col.ix2) ], "SummarizedExperiment")
+         trt_dir <- paste0(res_dir, trt)
+         dir.create(trt_dir)
          
-         # map ids to symbols
-         id_symbol <- select(org.Hs.eg.db,
-                             rownames(se),
-                             'SYMBOL',
-                             'ENTREZID')
-         all(rownames(se) == id_symbol$ENTREZID)
-         rownames(se) <- id_symbol$SYMBOL
-
-         se <- se[!is.na(rownames(se)),]
-
-         # write to file
-         write_rds(se, paste0('data/', trt, '.rds'))
+         map(cell_lines, function(c) {
+             # subset sl object
+             col.ix <- which(md$cell_id == c & md$pert_iname %in% trt_ind)
+             
+             if(length(col.ix) > 0) {
+                 se <- as(sl[, col.ix], "SummarizedExperiment")
+                 
+                 # map ids to symbols
+                 id_symbol <- select(org.Hs.eg.db,
+                                     rownames(se),
+                                     'SYMBOL',
+                                     'ENTREZID')
+                 # all(rownames(se) == id_symbol$ENTREZID)
+                 rownames(se) <- id_symbol$SYMBOL
+                 
+                 se <- se[!is.na(rownames(se)),]
+                 
+                 # write to file
+                 expr_dir <- paste0(res_dir, trt, '/exprs')
+                 dir.create(expr_dir)
+                 write_rds(se, paste0(expr_dir, '/', c,'.rds'))
+                 message(paste('Done.', trt, 'in', c))
+             }
+         }) 
+         
      })
 
-# merge the metadatafiles
-list.files('data',
+# merge the metadata files
+list.files(tmp,
            pattern = 'expression_metadata_trt*', full.names = TRUE) %>%
     map_df(function(x) {
         df <- read_tsv(x) %>% mutate(pert_dose_unit = as.character(pert_dose_unit))
         unlink(x)
         df
     }) %>%
-    write_tsv('data/expression_metadata.tsv')
+    write_tsv(file.path(res_dir, 'expression_metadata.tsv'))

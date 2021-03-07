@@ -12,7 +12,7 @@ tibble(file = list.files('tools/NPAModels/data/', 'Hs')) %>%
                paste0('version_', 1:3)), 
              '__|\\.') %>%
     unite('version', starts_with('version'), sep = '.') %>%
-    write_tsv('data/models_metadata.tsv')
+    write_tsv(file.path('results/', 'models_metadata.tsv'))
 
 # preprocess the networks
-preprocessNetworks()
+# preprocessNetworks()

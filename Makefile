@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define variables
-CODE=code
 DATA=data
+CODE=code
 RESULTS=results
 LOG=log
 

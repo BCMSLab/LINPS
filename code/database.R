@@ -4,13 +4,17 @@ library(reshape2)
 library(DBI)
 
 # make the database file
-if(file.exists('results/LINPS.sqlite')) unlink('results/LINPS.sqlite')
-con <- dbConnect(RSQLite::SQLite(), dbname = "results/LINPS.sqlite")
+res_dir <- 'results/'
+fl <- file.path(res_dir, 'LINPS.sqlite')
+
+if(file.exists(fl)) unlink(fl)
+
+con <- dbConnect(RSQLite::SQLite(), dbname = fl)
 
 # biological impact factor
-list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
+list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
     map(function(trt) {
-        d1 <- paste('results', trt, 'bif', sep = '/')
+        d1 <- paste0(res_dir, trt, '/bif')
         fls <- list.files(d1,
                           pattern = '*.rds', 
                           recursive = TRUE,
@@ -43,9 +47,9 @@ list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
             })
     })
 
-list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
+list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
     map(function(trt) {
-        d1 <- paste('results', trt, 'npa_lists', sep = '/')
+        d1 <- paste0(res_dir, trt, '/npa_lists')
         fls <- list.files(d1,
                           pattern = '*.rds', 
                           recursive = TRUE,
@@ -106,9 +110,9 @@ list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
     })
 
 # similarity
-list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
+list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
     map(function(trt) {
-        d1 <- paste('results', trt, 'similarity', sep = '/')
+        d1 <- paste0(res_dir, trt, '/similarity')
         fls <- list.files(d1,
                           pattern = '*.tsv',
                           recursive = TRUE,
@@ -130,7 +134,7 @@ list.dirs('results', recursive = FALSE, full.names = FALSE) %>%
     })
 
 # the network models
-models <- read_tsv('data/models_metadata.tsv') %>%
+models <- read_tsv(file.path(res_dir, 'models_metadata.tsv')) %>%
     mutate(version = str_replace_all(version, '\\.', '__'),
            graph = paste(species, family, model, version, sep = '__'))
 
@@ -151,7 +155,7 @@ dbWriteTable(con,
              append = TRUE)
 
 # the perturbation metadata
-perturbations <- read_tsv('data/expression_metadata.tsv')
+perturbations <- read_tsv(file.path(res_dir, 'expression_metadata.tsv'))
 dbWriteTable(con,
              value = perturbations,
              name = 'perturbations',
