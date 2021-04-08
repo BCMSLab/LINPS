@@ -4,58 +4,48 @@
 library(SummarizedExperiment)
 library(limma)
 library(tidyverse)
+source('R/functions.R')
 
-# load data
-perturbs <- c("trt_sh", "trt_oe",  "trt_oe.mut", "trt_cp")
-controls <- c(rep('EMPTY_VECTOR', 3), 'DMSO')
+# create directory
+res_dir <- file.path('results')
+exprs_dir <- file.path(res_dir, 'exprs')
+diff_expr <- file.path(res_dir, 'diff_expr')
+if (!file.exists(diff_expr)) dir.create(diff_expr)
 
-res_dir <- 'results/'
+trt <- list.files(exprs_dir)
+trt <- trt[!grepl('DMSO', trt)]
 
-map2(perturbs, controls,
-     function(trt, ctr) {
-         trt_dir <- paste0(res_dir, trt)
-         dir.create(trt_dir)
-         
-         res <- paste0(trt_dir, '/diff_expr')
-         dir.create(res)
-         message(paste('Directory', res, 'created.'))
-         
-         d <- paste0(res_dir, trt, '/exprs/')
-         cell <- str_split(list.files(d),
-                           '\\.',
-                           simplify = TRUE)[, 1]
-         
-         map(cell, function(c) {
-             se_ctr <- read_rds(paste0(res_dir, ctr, '/exprs/', c, '.rds'))
-             se_trt <- read_rds(paste0(res_dir, trt, '/exprs/', c, '.rds'))
-             
-             se <- cbind(se_trt, se_ctr)
-             
-             message(paste('SE object', trt, 'in', c, 'is loaded.'))
-             rm(se_ctr)
-             rm(se_trt)
-             se$pert_iname <- relevel(factor(se$pert_iname), ref = ctr)
-             se <- se[!is.na(rownames(se)),]
-             
-             # TODO: a more sophisticated model needs to be used
-             mod <- model.matrix(~pert_iname, colData(se))
-             colnames(mod) <- str_replace(colnames(mod), 'pert_iname', '')
-             
-             fit <- lmFit(assay(se), mod)
-             fit <- eBayes(fit)
-             
-             map_df(colnames(mod)[-1],
-                    ~topTable(fit,
-                              number = Inf,
-                              genelist = rownames(se),
-                              coef = .x) %>%
-                        mutate(pert_iname = .x)) %>%
-                 mutate(cell_id = c) %>%
-                 write_tsv(file.path(res, paste0(c, '.tsv')))
-             
-             rm(fit)
-             rm(se)
-             
-             message(paste('Done. Differential expression of', trt, 'in', c))
-         })
-     })
+map(trt, function(t) {
+    cell_lines <- str_split(list.files(file.path(exprs_dir, t)),
+                            '\\.',
+                            simplify = TRUE)[, 1]
+    trt_deg <- file.path(diff_expr, t)
+    if (!file.exists(trt_deg)) dir.create(trt_deg)
+    
+    map(cell_lines, function(c) {
+        ctr_file <- file.path(exprs_dir, 'DMSO', paste0(c, '.rds'))
+        trt_file <- file.path(exprs_dir, t, paste0(c, '.rds'))
+        
+        # read expression
+        se_ctr <- read_rds(ctr_file)
+        se_trt <- read_rds(trt_file)
+        
+        # combine
+        se <- cbind(se_trt, se_ctr)
+        
+        # clean
+        rm(se_ctr)
+        rm(se_trt)
+        
+        # write top tables
+        fl <- file.path(trt_deg, paste0(c, '.tsv'))
+        
+        # get deg
+        differential_expression(se, 'DMSO', fl)
+        
+        # # clean
+        # rm(se)
+        # 
+        message(paste('Done. Differential expression of', t, 'in', c))
+    })
+})

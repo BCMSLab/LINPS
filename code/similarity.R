@@ -4,34 +4,31 @@ library(reshape2)
 library(Hmisc)
 
 # calculate similarity
-res_dir <- 'results/'
+diff_expr <- file.path('results/diff_expr')
+sim_dir <- file.path('results/similarity')
+if (!dir.exists(sim_dir)) dir.create(sim_dir)
 
-perturbs <- c("trt_cp", "trt_sh", "trt_oe",  "trt_oe.mut")
-
-map(perturbs,
-    function(x) {
-    d <- paste0(res_dir, x, '/diff_expr')
-    cell <- str_split(list.files(d),
-                      '\\.',
-                      simplify = TRUE)[, 1]
-    
-    map(cell, function(c) {
-        r <- read_tsv(file.path(d, paste0(c, '.tsv'))) %>%
-            acast(ID ~ pert_iname, value.var = 'logFC') %>%
-            rcorr()
-            # rcorr(type = 'spearman') # TODO: choose a better measure of similarity
+tibble(files = list.files(diff_expr, recursive = TRUE, full.names = TRUE)) %>%
+    mutate(pert_type = str_split(files, '/|\\.tsv', simplify = TRUE)[, 3]) %>%
+    group_split(pert_type) %>%
+    map(function(trt) {
+        trt_dir <- file.path(sim_dir, unique(trt$pert_type))
+        if (!dir.exists(trt_dir)) dir.create(trt_dir)
         
-        sim <- left_join(melt(r$r, value.name = 'SCC'),
-                  melt(r$P, value.name = 'PVAL')) %>%
-            as_tibble() %>%
-            na.omit() %>%
-            mutate(cell_id = c)
-        
-        sim_dir <- paste0(res_dir, x,'/similarity')
-        dir.create(sim_dir)
-        
-        write_tsv(sim,
-                  file.path(sim_dir, paste0(c, '.tsv')))
-        
+        map(trt$files, function(x) {
+            r <- read_tsv(x) %>%
+                acast(ID~pert_iname, value.var = 'logFC') %>%
+                rcorr()
+            
+            df <- left_join(melt(r$r, value.name = 'SCC'),
+                            melt(r$P, value.name = 'PVAL')) %>%
+                as_tibble() %>%
+                na.omit() %>%
+                mutate(cell_id = str_split(x, '/|\\.tsv', simplify = TRUE)[, 4],
+                       pert_type = str_replace_all(unique(trt$pert_type), '\\.', ' ')) %>%
+                mutate_if(is.numeric, round, digits = 4) %>%
+                dplyr::select(pert_type, Var1, Var2, cell_id, everything())
+            
+            write_tsv(df, file.path(trt_dir, paste0(unique(df$cell_id), '.tsv')))
+        })
     })
-})

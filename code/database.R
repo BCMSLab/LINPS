@@ -11,126 +11,145 @@ if(file.exists(fl)) unlink(fl)
 
 con <- dbConnect(RSQLite::SQLite(), dbname = fl)
 
+# TODO: add significance (pvalues)
 # biological impact factor
-list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
-    map(function(trt) {
-        d1 <- paste0(res_dir, trt, '/bif')
-        fls <- list.files(d1,
+bif_dir <- file.path('results', 'bif')
+npa_list_dir <- file.path('results', 'npa_list')
+sim_dir <- file.path(res_dir, 'similarity')
+
+trt <- list.files(bif_dir)
+
+trt %>%
+    map(function(t) {
+        
+        fls <- list.files(file.path(bif_dir, t),
                           pattern = '*.rds', 
-                          recursive = TRUE,
                           full.names = TRUE)
-        fls %>%
-            map(function(f) {
-                fl <- str_split(f,
-                                '/|\\.',
-                                simplify = TRUE)
-                bif <- read_rds(f)
-                
-                # TODO: extract other tables from BIF
-                # TODO: extract other items in the object
-                df <- map_df(bif$get_data()$BIF[c('rbif', 'r2')],
-                             function(x) melt(x) %>% setNames(c('pert_iname', 'stat', 'value')),
-                             .id = 'type') %>%
-                    mutate(pert_type = fl[, 2],
-                           cell_id = fl[, 4]) %>%
-                    dplyr::select(pert_type, pert_iname, cell_id,
-                                  everything()) %>%
-                    spread(stat, value)
-                
-                # TODO: find the reason for this r2net!
-                df <- df[, !names(df) %in% c('r2net')]
+        
+        map(fls, function(f) {
+            # extract info from file name
+            fl <- str_split(f,
+                            '/|\\.rds',
+                            simplify = TRUE)
+            
+            # load object
+            bif <- read_rds(f)
+            
+            # extract and write to the db
+            tibble(pert_type = str_replace_all(fl[, 3], '\\.', ' '),
+                   pert_iname = rownames(NPA::as.matrix(bif)),
+                   cell_id = fl[, 4],
+                   RBIF = NPA::as.matrix(bif, type = 'coefficients')[, 'RBIF']) %>%
+                filter(RBIF > 0) %>%
                 dbWriteTable(con,
-                             value = df,
+                             value = .,
+                             name = 'rbif',
+                             overwrite = FALSE,
+                             append = TRUE)
+            
+            # extract and write to the db
+            NPA::as.matrix(bif) %>%
+                as.data.frame() %>%
+                dplyr::select(-BIF) %>%
+                filter(rowSums(.) > 0) %>%
+                rownames_to_column('pert_iname') %>%
+                as_tibble() %>%
+                mutate(pert_type = str_replace_all(fl[, 3], '\\.', ' '),
+                       cell_id = fl[, 4]) %>%
+                dplyr::select(pert_type, pert_iname, cell_id, everything()) %>%
+                dbWriteTable(con,
+                             value = .,
                              name = 'bif',
                              overwrite = FALSE,
                              append = TRUE)
-            })
+        })
     })
 
-list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
-    map(function(trt) {
-        d1 <- paste0(res_dir, trt, '/npa_lists')
-        fls <- list.files(d1,
+trt %>%
+    map(function(t) {
+        fls <- list.files(file.path(npa_list_dir, t),
                           pattern = '*.rds', 
-                          recursive = TRUE,
                           full.names = TRUE)
-        fls
-        fls %>%
+        
+        fls[lengths(fls) > 0] %>%
             map(function(f) {
                 fl <- str_split(f,
-                                '/|\\.',
+                                '/|\\.rds',
                                 simplify = TRUE)
+                
                 npa_list <- read_rds(f)
                 
-                # TODO: extract other items in the object
                 # network info
-                net <- c('coefficients', 'coefficients.var', 'ci.up', 'ci.down')
+                nets <- NPA::networks(npa_list)
                 
-                networks <- npa_list$get_data() %>%
-                    map_df(function(n) {
-                        bind_rows(n[net]) %>%
-                            mutate(pert_iname = names(n$coefficients))
-                    }, .id = 'network') %>%
-                    separate(network,
-                             into = c('family', 'network'),
-                             sep = ' / ') %>%
-                    mutate(pert_type = fl[, 2],
-                           cell_id = fl[, 4]) %>%
-                    dplyr::select(pert_type, pert_iname, cell_id,
-                                  family, network,
-                                  everything())
-                dbWriteTable(con,
-                             value = networks,
-                             name = 'networks',
-                             overwrite = FALSE,
-                             append = TRUE)
-                
-                # nodes info
-                nds <- c("nodes.coefficients", "nodes.coefficients.ci.up",
-                         "nodes.coefficients.ci.down", "nodes.coefficients.pvalue" )
-                nodes <- npa_list$get_data() %>%
-                    map_df(function(n) {
-                        map_df(n[nds], melt, .id = 'stat') %>% as_tibble()
-                    }, .id = 'network') %>%
-                    separate(network,
-                             into = c('family', 'network'),
-                             sep = ' / ') %>%
-                    mutate(pert_type = fl[, 2],
-                           cell_id = fl[, 4]) %>%
-                    dplyr::select(pert_type, pert_iname = Var2, cell_id,
-                                  family, network, node = Var1,
-                                  everything()) %>%
-                    spread(stat, value)
-                dbWriteTable(con,
-                             value = nodes,
-                             name = 'nodes',
-                             overwrite = FALSE,
-                             append = TRUE)
+                map(seq_along(nets), function(x) {
+                    npa_sub <- NPA::subset(npa_list, x)
+                    tibble(
+                        pert_iname = NPA::comparisons(npa_sub),
+                        coefficients = NPA::coefficients(npa_sub),
+                        down = NPA::conf.int(npa_sub)[, 'down'],
+                        up = NPA::conf.int(npa_sub)[, 'up']
+                    ) %>%
+                        mutate(pert_type = str_replace_all(fl[, 3], '\\.', ' '),
+                               cell_id = fl[, 4],
+                               network = nets[x]) %>%
+                        separate(network,
+                                 into = c('family', 'network'),
+                                 sep = ' / ') %>%
+                        dplyr::select(pert_type, pert_iname, cell_id, 
+                                      family, network, everything()) %>%
+                        dbWriteTable(con,
+                                     value = .,
+                                     name = 'networks',
+                                     overwrite = FALSE,
+                                     append = TRUE)
+                    
+                    # nodes
+                    # extract coefficients
+                    coefficients <-  NPA::coefficients(npa_sub, type = 'nodes') %>%
+                        melt() %>%
+                        setNames(c('node', 'pert_iname', 'coefficient')) %>%
+                        mutate_at(vars('node', 'pert_iname'), as.character)
+                    
+                    # extract conf.int
+                    conf.int <- NPA::conf.int(npa_sub, type = 'nodes') %>%
+                        melt() %>%
+                        separate(Var2, into = c('Var2', 'dir'), sep = ' \\(') %>%
+                        mutate(dir = str_remove_all(dir, '\\)')) %>%
+                        spread(dir, value) %>%
+                        setNames(c('node', 'pert_iname', 'down', 'up')) %>%
+                        mutate_at(vars('node', 'pert_iname'), as.character)
+                    
+                    # join, format and wirte to db
+                    inner_join(coefficients, conf.int) %>%
+                        mutate(pert_type = fl[, 3],
+                               pert_type = str_replace_all(pert_type, '\\.', ' '),
+                               cell_id = fl[, 4],
+                               network = nets[x]) %>%
+                        separate(network,
+                                 into = c('family', 'network'),
+                                 sep = ' / ') %>%
+                        dplyr::select(pert_type, pert_iname, cell_id, 
+                                      family, network, node, everything()) %>%
+                        dbWriteTable(con,
+                                     value = .,
+                                     name = 'nodes',
+                                     overwrite = FALSE,
+                                     append = TRUE)
+                }) 
             })
     })
 
 # similarity
-list.dirs(res_dir, recursive = FALSE, full.names = FALSE) %>%
-    map(function(trt) {
-        d1 <- paste0(res_dir, trt, '/similarity')
-        fls <- list.files(d1,
-                          pattern = '*.tsv',
-                          recursive = TRUE,
-                          full.names = TRUE)
-        fls %>%
-            map(function(f) {
-                df <- read_tsv(f)
-                
-                # TODO: should be added in diff_expr
-                df <- mutate(df, pert_type = trt) %>%
-                    select(cell_id, pert_type, everything())
-                
-                dbWriteTable(con,
-                             value = df,
-                             name = 'similarity',
-                             overwrite = FALSE,
-                             append = TRUE)
-            })
+list.files('results/similarity', recursive = TRUE, full.names = TRUE) %>%
+    map(function(f) {
+        df <- read_tsv(f) %>% 
+            filter(PVAL < .05)
+        dbWriteTable(con,
+                     value = df,
+                     name = 'similarity',
+                     overwrite = FALSE,
+                     append = TRUE)
     })
 
 # the network models
@@ -156,11 +175,11 @@ dbWriteTable(con,
 
 # the perturbation metadata
 perturbations <- read_tsv(file.path(res_dir, 'expression_metadata.tsv'))
+
 dbWriteTable(con,
              value = perturbations,
              name = 'perturbations',
-             overwrite = FALSE,
-             append = TRUE)
+             overwrite = TRUE)
 
 # disconnect
 dbDisconnect(con)
